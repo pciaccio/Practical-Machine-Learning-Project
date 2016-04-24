@@ -1,0 +1,115 @@
+---
+title: "Predicting Exercise Classes"
+author: "Priscilla Ciaccio"
+date: "April 18, 2016"
+output: html_document
+---
+
+##Executive Summary
+
+This project involves predicting the manner in which an exercise was done. The training data comes from https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv and the testing data comes from https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv. This database is a collection of data concerning personal activity from devices such as Jawbone Up, Nike FuelBand, and Fitbit.
+
+The goal of this project is to predict the manner in which an exercise was done. The manner in which the activities were done in the classe variable in the training data. The values of the classe variable are A, B, C, D, and E.
+
+The following libraries need to be included for the project.
+
+```{r,results="hide",message=FALSE,warning=FALSE}
+library(caret)
+library(rpart)
+library(randomForest)
+library(rattle)
+```
+
+## Data Processing
+
+The code below downloads the data from the website listed above.
+
+```{r, cache=TRUE}
+url_training<-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+url_testing<-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+download.file(url_training,destfile = "training.csv")
+download.file(url_testing,destfile = "testing.csv")
+training_data<-read.csv("training.csv",na.strings=c("NA","NaN", " ",""))
+testing_data<-read.csv("testing.csv",na.strings=c("NA","NaN", " ","") )
+```
+
+The following code deletes the variables that cannot be used in the predictive model.  These deleted includes variables that were mostly blank or NA, since mostly incomplete variables cannot be used to for prediction.  I also deleted the first seven variables in the data set since they were variables used to identify the person completing the activity or the time when the activity was performed. I deleted the variable from both the training and testing sets since data transformations should be performed on both.
+
+```{r}
+training_data<-training_data[,apply(training_data, 2, function(x) sum(x %in% c(NA,NaN, " ","")))==0]
+training_data<-training_data[,-c(1:7)]
+testing_data<-testing_data[,apply(testing_data, 2, function(x) sum(x %in% c(NA,NaN, " ","")))==0]
+testing_data<-testing_data[,-c(1:7)]
+```
+
+I then checked the remaining data for variables with no or low variability.
+
+```{r}
+nzv<-nearZeroVar(training_data,saveMetrics=TRUE)
+nzv
+```
+
+Since none of the rest of the variables had zeroVar or nzv values of TRUE, none need to be deleted.
+
+## Prediction Models
+
+After trying to use the complete training set, and having it freeze my computer, I decided to split the training set into 2. For each training subset I split out a testing set.
+
+```{r}
+set.seed(1234)
+inTrain<-createDataPartition(y=training_data$classe,p=0.5,list=FALSE)
+training_set1<-training_data[inTrain,]
+training_set2<-training_data[-inTrain,]
+
+inTrain<-createDataPartition(y=training_set1$classe,p=0.7,list=FALSE)
+training1<-training_set1[inTrain,]
+testing1<-training_set1[-inTrain,]
+
+inTrain<-createDataPartition(y=training_set2$classe,p=0.7,list=FALSE)
+training2<-training_set2[inTrain,]
+testing2<-training_set2[-inTrain,]
+```
+
+Since we are trying to predict a factor variable I decided to try the prediction using classification trees and random forest methods.
+
+```{r}
+# classification trees
+fit1<-train(classe ~ ., data=training1, method="rpart") 
+print(fit1)
+```
+
+There is low accuarcy in the in-sample data, so I altered the prediction model to include preProcessing the data and including cross-validation with 5 folds.
+
+```{r}
+fit11<-train(classe~.,data=training1,method="rpart",preProcess=c("center","scale"),trControl=
+               trainControl(method = "cv", number = 5))
+print(fit11)
+```
+
+This has slightly increased the in-sample accuracy. Since it is a better in-sample predictor, I used it to predict the testing set.
+
+```{r}
+fancyRpartPlot(fit11$finalModel)
+pred1<-predict(fit11,newdata=testing1)
+confusionMatrix(pred1,testing1$classe)
+```
+
+Using classification trees, both the in-sample and out-of-sample accuracy is very low. Since classification trees are not an accurate prediction, I moved on to a random forest prediction.
+
+```{r}
+# random forest
+fit2<-randomForest(classe~.,data=training2,importance=TRUE,proximity=TRUE) 
+print(fit2)
+pred2<-predict(fit2,newdata=testing2)
+confusionMatrix(pred2,testing2$classe)
+```
+
+The in-sample and out-of-sample accuracy for the random forest prediction was much higher, almost perfect,over 98%. This prediction is the one that was used to predict the original testing data set and complete the Project Prediction Quiz.
+
+```{r}
+# testing the prediction
+pred3<-predict(fit2,newdata=testing_data)
+pred3
+```
+
+The predictions listed above were the correct answers to the Project Prediction Quiz.
